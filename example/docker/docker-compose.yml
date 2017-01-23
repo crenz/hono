@@ -11,6 +11,12 @@ services:
   hono-config:
     image: eclipsehono/hono-default-config:${project.version}
 
+  rest-adapter-certs:
+    image: eclipsehono/rest-adapter-certs:${project.version}
+
+  mqtt-adapter-certs:
+    image: eclipsehono/mqtt-adapter-certs:${project.version}
+
 # Artemis configuration is disabled until Artemis supports
 # addresses containing "/" character as path separator
 #
@@ -33,7 +39,9 @@ services:
   qdrouter:
     image: gordons/qpid-dispatch:${qpid-dispatch.version}
     ports:
+      - "15671:5671"
       - "15672:5672"
+      - "15673:5673"
 #    links:
 #      - broker
     volumes_from:
@@ -47,9 +55,15 @@ services:
     links:
       - qdrouter
     environment:
-      - HONO_PERMISSIONS_PATH=file:/etc/hono/permissions.json
       - HONO_DOWNSTREAM_HOST=qdrouter
+      - HONO_DOWNSTREAM_PORT=5673
+      - HONO_DOWNSTREAM_KEY_STORE_PATH=/etc/hono/certs/honoKeyStore.p12
+      - HONO_DOWNSTREAM_KEY_STORE_PASSWORD=honokeys
+      - HONO_DOWNSTREAM_TRUST_STORE_PATH=/etc/hono/certs/ca-cert.pem
+      - HONO_KEY_STORE_PATH=/etc/hono/certs/honoKeyStore.p12
+      - HONO_KEY_STORE_PASSWORD=honokeys
       - HONO_MAX_INSTANCES=1
+      - HONO_PERMISSIONS_PATH=file:/etc/hono/permissions.json
       - LOGGING_CONFIG=file:///etc/hono/logback-spring.xml
       - SPRING_CONFIG_LOCATION=file:/etc/hono/
       - SPRING_PROFILES_ACTIVE=default,dev
@@ -66,11 +80,15 @@ services:
       - HONO_CLIENT_NAME=Hono REST Adapter
       - HONO_CLIENT_HOST=hono
       - HONO_CLIENT_PORT=5672
-      - HONO_CLIENT_USERNAME=hono-client
+      - HONO_CLIENT_USERNAME=rest-adapter
       - HONO_CLIENT_PASSWORD=secret
+      - HONO_CLIENT_TRUST_STORE_PATH=/etc/hono/certs/trustStore.jks
+      - HONO_CLIENT_TRUST_STORE_PASSWORD=honotrust
       - HONO_HTTP_BINDADDRESS=0.0.0.0
       - HONO_MAX_INSTANCES=1
       - SPRING_PROFILES_ACTIVE=dev
+    volumes_from:
+      - rest-adapter-certs
 
   mqtt-adapter:
     image: eclipsehono/hono-adapter-mqtt-vertx:${project.version}
@@ -82,8 +100,12 @@ services:
       - HONO_CLIENT_NAME=Hono MQTT Adapter
       - HONO_CLIENT_HOST=hono
       - HONO_CLIENT_PORT=5672
-      - HONO_CLIENT_USERNAME=hono-client
+      - HONO_CLIENT_USERNAME=mqtt-adapter
       - HONO_CLIENT_PASSWORD=secret
+      - HONO_CLIENT_TRUST_STORE_PATH=/etc/hono/certs/trustStore.jks
+      - HONO_CLIENT_TRUST_STORE_PASSWORD=honotrust
       - HONO_MQTT_BINDADDRESS=0.0.0.0
       - HONO_MAX_INSTANCES=1
       - SPRING_PROFILES_ACTIVE=dev
+    volumes_from:
+      - mqtt-adapter-certs

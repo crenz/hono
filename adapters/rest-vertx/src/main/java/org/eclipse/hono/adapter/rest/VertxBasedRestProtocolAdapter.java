@@ -15,11 +15,10 @@ package org.eclipse.hono.adapter.rest;
 import static java.net.HttpURLConnection.*;
 
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.function.BiConsumer;
 
 import org.eclipse.hono.client.HonoClient;
-import org.eclipse.hono.client.HonoClient.HonoClientBuilder;
-import org.eclipse.hono.config.HonoClientConfigProperties;
 import org.eclipse.hono.client.MessageSender;
 import org.eclipse.hono.client.RegistrationClient;
 import org.eclipse.hono.util.RegistrationResult;
@@ -59,7 +58,6 @@ public class VertxBasedRestProtocolAdapter extends AbstractVerticle {
     private static final Logger LOG = LoggerFactory.getLogger(VertxBasedRestProtocolAdapter.class);
     private static final String PARAM_TENANT = "tenant";
     private static final String PARAM_DEVICE_ID = "device_id";
-    private static final String NAME = "Hono REST Adapter";
 
     @Value("${hono.http.bindaddress:0.0.0.0}")
     private String bindAddress;
@@ -67,24 +65,37 @@ public class VertxBasedRestProtocolAdapter extends AbstractVerticle {
     @Value("${hono.http.listenport:8080}")
     private int listenPort;
 
-    @Autowired
-    private HonoClientConfigProperties honoClientConfig;
-
     @Value("${spring.profiles.active:prod}")
     private String activeProfiles;
 
     private HttpServer server;
     private HonoClient hono;
-    private final BiConsumer<String, Handler<AsyncResult<MessageSender>>> eventSenderSupplier
-            = (tenant, resultHandler) -> hono.getOrCreateEventSender(tenant, resultHandler);
-    private final BiConsumer<String, Handler<AsyncResult<MessageSender>>> telemetrySenderSupplier
-            = (tenant, resultHandler) -> hono.getOrCreateTelemetrySender(tenant, resultHandler);
+
+    private BiConsumer<String, Handler<AsyncResult<MessageSender>>> eventSenderSupplier;
+    private BiConsumer<String, Handler<AsyncResult<MessageSender>>> telemetrySenderSupplier;
+
+    /**
+     * Sets the client to use for connecting to the Hono server.
+     * 
+     * @param honoClient The client.
+     * @throws NullPointerException if hono client is {@code null}.
+     */
+    @Autowired
+    public void setHonoClient(final HonoClient honoClient) {
+        this.hono = Objects.requireNonNull(honoClient);
+    }
 
     @Override
     public void start(Future<Void> startFuture) throws Exception {
 
-        bindHttpServer(createRouter(), startFuture);
-        connectToHono(null);
+        if (hono == null) {
+            startFuture.fail("Hono client must be set");
+        } else {
+            eventSenderSupplier = (tenant, resultHandler) -> hono.getOrCreateEventSender(tenant, resultHandler);
+            telemetrySenderSupplier = (tenant, resultHandler) -> hono.getOrCreateTelemetrySender(tenant, resultHandler);
+            bindHttpServer(createRouter(), startFuture);
+            connectToHono(null);
+        }
     }
 
     /**
@@ -235,10 +246,8 @@ public class VertxBasedRestProtocolAdapter extends AbstractVerticle {
     }
 
     private void doGetStatus(final RoutingContext ctx) {
-        JsonObject result = new JsonObject()
-                .put("name", NAME)
-                .put("connected", isConnected())
-                .put("active profiles", activeProfiles);
+        JsonObject result = new JsonObject(hono.getConnectionStatus());
+        result.put("active profiles", activeProfiles);
 
         ctx.response()
             .putHeader(HttpHeaders.CONTENT_TYPE, CONTENT_TYPE_JSON)
@@ -475,15 +484,6 @@ public class VertxBasedRestProtocolAdapter extends AbstractVerticle {
 
     private void connectToHono(final Handler<AsyncResult<HonoClient>> connectHandler) {
 
-        // make sure that we are not trying to connect multiple times in parallel
-        hono = HonoClientBuilder.newClient()
-                .vertx(vertx)
-                .name(NAME)
-                .host(honoClientConfig.getHost())
-                .port(honoClientConfig.getPort())
-                .user(honoClientConfig.getUsername())
-                .password(honoClientConfig.getPassword())
-                .build();
         ProtonClientOptions options = new ProtonClientOptions()
                 .setReconnectAttempts(-1)
                 .setReconnectInterval(200); // try to re-connect every 200 ms
@@ -492,9 +492,5 @@ public class VertxBasedRestProtocolAdapter extends AbstractVerticle {
                 connectHandler.handle(connectAttempt);
             }
         });
-    }
-
-    private boolean isConnected() {
-        return hono != null && hono.isConnected();
     }
 }

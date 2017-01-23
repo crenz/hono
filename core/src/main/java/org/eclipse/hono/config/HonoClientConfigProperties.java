@@ -12,99 +12,143 @@
 
 package org.eclipse.hono.config;
 
+import java.util.Objects;
+
 /**
  * Common configuration properties required for accessing a Hono server.
  */
-public class HonoClientConfigProperties {
+public final class HonoClientConfigProperties extends AbstractHonoConfig {
 
-    private String name = "Hono client";
+    private static final int MAX_PORT_NO = 65535;
+    private String name;
     private String host = "localhost";
     private int port = 5672;
     private String username;
-    private String password;
-    private String pathSeparator = "/";
+    private char[] password;
+    private String amqpHostname;
 
     /**
-     * @return the host
+     * Gets the name or literal IP address of the host that the client is configured to connect to.
+     * 
+     * @return The host name.
      */
     public String getHost() {
         return host;
     }
 
     /**
-     * @param host the host to set
+     * Sets the name or literal IP address of the host that the client should connect to.
+     * 
+     * @param host The host name or IP address.
+     * @throws NullPointerException if host is {@code null}.
      */
     public void setHost(final String host) {
-        this.host = host;
+        this.host = Objects.requireNonNull(host);
     }
 
     /**
-     * @return the port
+     * Gets the TCP port of the server that this client is configured to connect to.
+     * 
+     * @return The port number.
      */
     public int getPort() {
         return port;
     }
 
     /**
-     * @param port the port to set
+     * Sets the TCP port of the server that this client should connect to.
+     * 
+     * @param port The port number.
+     * @throws IllegalArgumentException if port &lt; 1 or port &gt; 65535.
      */
     public void setPort(final int port) {
+        if (port < 1 || port > MAX_PORT_NO) {
+            throw new IllegalArgumentException("port number must be >=1 and <= " + MAX_PORT_NO);
+        } 
         this.port = port;
     }
 
     /**
-     * @return the username
+     * Gets the user name that is used when authenticating to the Hono server.
+     * 
+     * @return The user name or {@code null} if not set.
      */
     public String getUsername() {
         return username;
     }
 
     /**
-     * @param username the username to set
+     * Sets the user name to use when authenticating to the Hono server.
+     * <p>
+     * If not set then this client will not try to authenticate to the server.
+     * 
+     * @param username The user name.
      */
     public void setUsername(final String username) {
         this.username = username;
     }
 
     /**
-     * @return the password
+     * Gets the password that is used when authenticating to the Hono server.
+     * 
+     * @return The password or {@code null} if not set.
      */
     public String getPassword() {
-        return password;
+        if (password == null) {
+            return null;
+        } else {
+            return String.valueOf(password);
+        }
     }
 
     /**
-     * @param password the password to set
+     * Sets the password to use in conjunction with the user name when authenticating to the Hono server.
+     * <p>
+     * If not set then this client will not try to authenticate to the server.
+     * 
+     * @param password The password.
      */
     public void setPassword(final String password) {
-        this.password = password;
+        if (password != null) {
+            this.password = password.toCharArray();
+        } else {
+            this.password = null;
+        }
     }
 
     /**
-     * @return the pathSeparator
-     */
-    public String getPathSeparator() {
-        return pathSeparator;
-    }
-
-    /**
-     * @param pathSeparator the pathSeparator to set
-     */
-    public void setPathSeparator(String pathSeparator) {
-        this.pathSeparator = pathSeparator;
-    }
-
-    /**
-     * @return the name
+     * Gets the name being indicated as the <em>container-id</em> in the client's AMQP <em>Open</em> frame.
+     * 
+     * @return The name or {@code null} if no name has been set.
      */
     public String getName() {
         return name;
     }
 
     /**
-     * @param name the name to set
+     * Sets the name to indicate as the <em>container-id</em> in the client's AMQP <em>Open</em> frame.
+     * 
+     * @param name The name to set.
      */
-    public void setName(String name) {
+    public void setName(final String name) {
         this.name = name;
+    }
+
+    /**
+     * Gets the name being indicated as the <em>hostname</em> in the client's AMQP <em>Open</em> frame.
+     * 
+     * @return The host name or {@code null} if no host name has been set.
+     */
+    public String getAmqpHostname() {
+        return amqpHostname;
+    }
+
+    /**
+     * Sets the name to indicate as the <em>hostname</em> in the client's AMQP <em>Open</em> frame.
+     * 
+     * @param amqpHostname The host name to set.
+     */
+    public void setAmqpHostname(String amqpHostname) {
+        this.amqpHostname = amqpHostname;
     }
 }

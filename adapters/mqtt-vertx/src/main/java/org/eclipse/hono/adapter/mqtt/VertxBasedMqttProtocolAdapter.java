@@ -12,6 +12,19 @@
 
 package org.eclipse.hono.adapter.mqtt;
 
+import java.nio.charset.Charset;
+import java.util.function.BiConsumer;
+import java.util.Objects;
+
+import org.eclipse.hono.client.HonoClient;
+import org.eclipse.hono.client.MessageSender;
+import org.eclipse.hono.util.ResourceIdentifier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
 import io.netty.handler.codec.mqtt.MqttConnectReturnCode;
 import io.netty.handler.codec.mqtt.MqttQoS;
 import io.vertx.core.AbstractVerticle;
@@ -23,18 +36,6 @@ import io.vertx.mqtt.MqttServer;
 import io.vertx.mqtt.MqttServerOptions;
 import io.vertx.mqtt.messages.MqttPublishMessage;
 import io.vertx.proton.ProtonClientOptions;
-import org.eclipse.hono.client.HonoClient;
-import org.eclipse.hono.config.HonoClientConfigProperties;
-import org.eclipse.hono.client.MessageSender;
-import org.eclipse.hono.util.ResourceIdentifier;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-
-import java.nio.charset.Charset;
-import java.util.function.BiConsumer;
 
 /**
  * A Vert.x based Hono protocol adapter for accessing Hono's Telemetry API using MQTT.
@@ -45,7 +46,6 @@ public class VertxBasedMqttProtocolAdapter extends AbstractVerticle {
     private static final Logger LOG = LoggerFactory.getLogger(VertxBasedMqttProtocolAdapter.class);
 
     private static final String CONTENT_TYPE_OCTET_STREAM = "application/octet-stream";
-    private static final String NAME = "MQTT Adapter";
     private static final String TELEMETRY_ENDPOINT = "telemetry";
     private static final String EVENT_ENDPOINT = "event";
 
@@ -55,15 +55,23 @@ public class VertxBasedMqttProtocolAdapter extends AbstractVerticle {
     @Value("${hono.mqtt.listenport:1883}")
     private int listenPort;
 
-    @Autowired
-    private HonoClientConfigProperties honoClientConfig;
-
-    private MqttServer server;
     private HonoClient hono;
     private final BiConsumer<String, Handler<AsyncResult<MessageSender>>> eventSenderSupplier
             = (tenant, resultHandler) -> hono.getOrCreateEventSender(tenant, resultHandler);
     private final BiConsumer<String, Handler<AsyncResult<MessageSender>>> telemetrySenderSupplier
             = (tenant, resultHandler) -> hono.getOrCreateTelemetrySender(tenant, resultHandler);
+    private MqttServer server;
+
+    /**
+     * Sets the client to use for connecting to the Hono server.
+     * 
+     * @param honoClient The client.
+     * @throws NullPointerException if hono client is {@code null}.
+     */
+    @Autowired
+    public void setHonoClient(final HonoClient honoClient) {
+        this.hono = Objects.requireNonNull(honoClient);
+    }
 
     private void bindMqttServer(final Future<Void> startFuture) {
 
@@ -90,15 +98,6 @@ public class VertxBasedMqttProtocolAdapter extends AbstractVerticle {
 
     private void connectToHono(final Handler<AsyncResult<HonoClient>> connectHandler) {
 
-        // make sure that we are not trying to connect multiple times in parallel
-        this.hono = HonoClient.HonoClientBuilder.newClient()
-                .vertx(vertx)
-                .name(NAME)
-                .host(honoClientConfig.getHost())
-                .port(honoClientConfig.getPort())
-                .user(honoClientConfig.getUsername())
-                .password(honoClientConfig.getPassword())
-                .build();
         ProtonClientOptions options = new ProtonClientOptions()
                 .setReconnectAttempts(-1)
                 .setReconnectInterval(200); // try to re-connect every 200 ms
@@ -112,8 +111,12 @@ public class VertxBasedMqttProtocolAdapter extends AbstractVerticle {
     @Override
     public void start(Future<Void> startFuture) throws Exception {
 
-        this.bindMqttServer(startFuture);
-        this.connectToHono(null);
+        if (hono == null) {
+            startFuture.fail("Hono client must be set");
+        } else {
+            this.bindMqttServer(startFuture);
+            this.connectToHono(null);
+        }
     }
 
     @Override

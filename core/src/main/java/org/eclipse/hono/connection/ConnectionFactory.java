@@ -23,11 +23,33 @@ import io.vertx.proton.ProtonConnection;
 public interface ConnectionFactory {
 
     /**
-     * Sets the host name to request in the AMQP <em>Open</em> frame sent to the server.
+     * Gets the name being indicated as the <em>container-id</em> in the client's AMQP <em>Open</em> frame.
      * 
-     * @param hostname The host name.
+     * @return The name or {@code null} if no name has been set.
      */
-    void setHostname(String hostname);
+    String getName();
+
+    /**
+     * Gets the host name of the server that this factory creates connections to.
+     * 
+     * @return The host name or literal IP address.
+     */
+    String getHost();
+
+    /**
+     * Gets the port of the server that this factory creates connections to.
+     * 
+     * @return The port number.
+     */
+    int getPort();
+
+    /**
+     * Gets the character sequence that the server uses for separating path components
+     * of target addresses.
+     * 
+     * @return The path separator.
+     */
+    String getPathSeparator();
 
     /**
      * Connects to a server.

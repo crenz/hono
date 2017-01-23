@@ -45,7 +45,10 @@ import io.vertx.core.AsyncResult;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Handler;
+import io.vertx.core.http.ClientAuth;
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.net.KeyCertOptions;
+import io.vertx.core.net.TrustOptions;
 import io.vertx.proton.ProtonConnection;
 import io.vertx.proton.ProtonLink;
 import io.vertx.proton.ProtonReceiver;
@@ -53,6 +56,7 @@ import io.vertx.proton.ProtonSender;
 import io.vertx.proton.ProtonServer;
 import io.vertx.proton.ProtonServerOptions;
 import io.vertx.proton.ProtonSession;
+import io.vertx.proton.sasl.ProtonSaslAuthenticatorFactory;
 
 /**
  * The Hono server is an AMQP 1.0 container that provides endpoints for the <em>Telemetry</em>,
@@ -63,22 +67,38 @@ import io.vertx.proton.ProtonSession;
 @Scope("prototype")
 public final class HonoServer extends AbstractVerticle {
 
-    private static final Logger   LOG = LoggerFactory.getLogger(HonoServer.class);
-    private String                bindAddress;
-    private int                   port;
-    private ProtonServer          server;
-    private Map<String, Endpoint> endpoints = new HashMap<>();
-    private HonoConfigProperties  honoConfig = new HonoConfigProperties();
+    private static final Logger            LOG = LoggerFactory.getLogger(HonoServer.class);
+    private String                         bindAddress;
+    private int                            port;
+    private ProtonServer                   server;
+    private Map<String, Endpoint>          endpoints = new HashMap<>();
+    private HonoConfigProperties           honoConfig = new HonoConfigProperties();
+    private ProtonSaslAuthenticatorFactory saslAuthenticatorFactory;
 
     /**
      * Sets the global Hono configuration properties.
      * 
      * @param props The properties.
+     * @return This instance for setter chaining.
      * @throws NullPointerException if props is {@code null}.
      */
     @Autowired(required = false)
-    public void setHonoConfiguration(final HonoConfigProperties props) {
+    public HonoServer setHonoConfiguration(final HonoConfigProperties props) {
         this.honoConfig = Objects.requireNonNull(props);
+        return this;
+    }
+
+    /**
+     * Sets the factory to use for creating objects performing SASL based authentication of clients.
+     * 
+     * @param factory The factory.
+     * @return This instance for setter chaining.
+     * @throws NullPointerException if factory is {@code null}.
+     */
+    @Autowired
+    public HonoServer setSaslAuthenticatorFactory(final ProtonSaslAuthenticatorFactory factory) {
+        this.saslAuthenticatorFactory = Objects.requireNonNull(factory);
+        return this;
     }
 
     @Override
@@ -91,7 +111,7 @@ public final class HonoServer extends AbstractVerticle {
         endpointsTracker.compose(s -> {
             final ProtonServerOptions options = createServerOptions();
             server = ProtonServer.create(vertx, options)
-                    .saslAuthenticatorFactory(new PlainSaslAuthenticatorFactory(vertx))
+                    .saslAuthenticatorFactory(saslAuthenticatorFactory)
                     .connectHandler(this::handleRemoteConnectionOpen)
                     .listen(port, bindAddress, bindAttempt -> {
                         if (bindAttempt.succeeded()) {
@@ -148,7 +168,31 @@ public final class HonoServer extends AbstractVerticle {
         options.setReceiveBufferSize(32 * 1024); // 32kb
         options.setSendBufferSize(32 * 1024); // 32kb
         options.setLogActivity(honoConfig.isNetworkDebugLoggingEnabled());
+
+        addTlsKeyCertOptions(options);
+        addTlsTrustOptions(options);
         return options;
+    }
+
+    private void addTlsTrustOptions(final ProtonServerOptions serverOptions) {
+
+        if (serverOptions.isSsl() && serverOptions.getTrustOptions() == null) {
+
+            TrustOptions trustOptions = honoConfig.getTrustOptions();
+            if (trustOptions != null) {
+                serverOptions.setTrustOptions(trustOptions).setClientAuth(ClientAuth.REQUEST);
+                LOG.info("enabling TLS for client authentication");
+            }
+        }
+    }
+
+    private void addTlsKeyCertOptions(final ProtonServerOptions serverOptions) {
+
+        KeyCertOptions keyCertOptions = honoConfig.getKeyCertOptions();
+
+        if (keyCertOptions != null) {
+            serverOptions.setSsl(true).setKeyCertOptions(keyCertOptions);
+        }
     }
 
     @Override
@@ -164,6 +208,11 @@ public final class HonoServer extends AbstractVerticle {
         }
     }
 
+    /**
+     * Adds multiple endpoints to this server.
+     * 
+     * @param definedEndpoints The endpoints.
+     */
     @Autowired
     public void addEndpoints(final List<Endpoint> definedEndpoints) {
         Objects.requireNonNull(definedEndpoints);
@@ -172,6 +221,11 @@ public final class HonoServer extends AbstractVerticle {
         }
     }
 
+    /**
+     * Adds an endpoint to this server.
+     * 
+     * @param ep The endpoint.
+     */
     public void addEndpoint(final Endpoint ep) {
         if (endpoints.putIfAbsent(ep.getName(), ep) != null) {
             LOG.warn("multiple endpoints defined with name [{}]", ep.getName());
@@ -231,6 +285,11 @@ public final class HonoServer extends AbstractVerticle {
         return this;
     }
 
+    /**
+     * Gets the IP address Hono will bind to.
+     *  
+     * @return The IP address.
+     */
     public String getBindAddress() {
         return bindAddress;
     }
